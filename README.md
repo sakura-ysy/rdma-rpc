@@ -1,2 +1,2 @@
-# rdma-example
-A simple RDMA example
+# rdma-rpc
+C++ RPC based on RDMA
