@@ -1,2 +1,2 @@
-# rdma-rpc
-A rpc based on RDMA
+# rdma-example
+A simple RDMA example

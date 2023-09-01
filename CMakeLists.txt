@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.10)
+project(rdma-example)
+set(PUBLIC_LIB rdmacm ibverbs event)
+add_subdirectory(src)
+add_subdirectory(app)
+
+
+
