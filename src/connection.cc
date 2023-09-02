@@ -2,32 +2,31 @@
 #include <util.h>
 #include <macro.h>
 
-Connection::Connection(Server* server, rdma_cm_id* client_id, uint32_t n_buffer_page, uint32_t conn_id)
-    : server_(server),
-      client_id_(client_id),
+Connection::Connection(rdma_cm_id* remote_id, uint32_t n_buffer_page, uint32_t conn_id)
+    : remote_id_(remote_id),
       n_buffer_page_(n_buffer_page),
       id_(conn_id) {
 
   // create pd
   int ret = 0;
-  server_pd_ = ibv_alloc_pd(client_id_->verbs);
-  checkNotEqual(server_pd_, static_cast<ibv_pd*>(nullptr), "ibv_alloc_pd() failed, server_pd_ == nullptr"); 
+  local_pd_ = ibv_alloc_pd(remote_id->verbs);
+  checkNotEqual(local_pd_, static_cast<ibv_pd*>(nullptr), "ibv_alloc_pd() failed, server_pd_ == nullptr"); 
 
   // create cq
-  server_cq_ = ibv_create_cq(client_id_->verbs, DEFAULT_CQ_CAPACITY, this, nullptr, 0);
-  checkNotEqual(server_cq_, static_cast<ibv_cq*>(nullptr), "ibv_create_cq() failed, server_cq_ == nullptr");
-  client_id_->recv_cq = server_cq_;
-  client_id_->send_cq = server_cq_;
+  local_cq_ = ibv_create_cq(remote_id->verbs, DEFAULT_CQ_CAPACITY, this, nullptr, 0);
+  checkNotEqual(local_cq_, static_cast<ibv_cq*>(nullptr), "ibv_create_cq() failed, server_cq_ == nullptr");
+  remote_id->recv_cq = local_cq_;
+  remote_id->send_cq = local_cq_;
   info("create protection domain(pd) and completion queue(cq)");
 
   ibv_qp_init_attr init_attr = defaultQpInitAttr();
-  init_attr.send_cq = server_cq_;
-  init_attr.recv_cq = server_cq_;
+  init_attr.send_cq = local_cq_;
+  init_attr.recv_cq = local_cq_;
 
   // create qp
-  ret = rdma_create_qp(client_id_, server_pd_, &init_attr);
+  ret = rdma_create_qp(remote_id, local_pd_, &init_attr);
   checkEqual(ret, 0, "rdma_create_qp() failed");
-  clietn_qp_ = client_id_->qp;
+  remote_qp_ = remote_id->qp;
   info("create queue pair(qp)");
 
   // create mr
@@ -35,7 +34,7 @@ Connection::Connection(Server* server, rdma_cm_id* client_id, uint32_t n_buffer_
   buffer_ = malloc(n_buffer_page * BUFFER_PAGE_SIZE);
   checkNotEqual(buffer_, static_cast<void*>(nullptr), "failedto malloc buffer_");
   int access = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE;
-  buffer_mr_ = ibv_reg_mr(server_pd_, buffer_, size, access);
+  buffer_mr_ = ibv_reg_mr(local_pd_, buffer_, size, access);
   checkNotEqual(buffer_mr_, static_cast<ibv_mr*>(nullptr), "ibv_reg_mr() falied, buffer_mr_ == nullptr");
   info("create memory region(mr)");
   
@@ -52,19 +51,19 @@ Connection::Connection(Server* server, rdma_cm_id* client_id, uint32_t n_buffer_
 Connection::~Connection() {
   int ret = 0;
 
-  ret = ibv_destroy_qp(clietn_qp_);
+  ret = ibv_destroy_qp(remote_qp_);
   wCheckEqual(ret, 0, "fail to destroy qp");
 
-  ret = ibv_destroy_cq(server_cq_);
+  ret = ibv_destroy_cq(local_cq_);
   wCheckEqual(ret, 0, "fail to destroy cq");
 
-  ret = rdma_destroy_id(client_id_);
+  ret = rdma_destroy_id(remote_id_);
   wCheckEqual(ret, 0, "fail to destroy id");
 
   ret = ibv_dereg_mr(buffer_mr_);
   wCheckEqual(ret, 0, "fail to deregister buffer memory region");
 
-  ret = ibv_dealloc_pd(server_pd_);
+  ret = ibv_dealloc_pd(local_pd_);
   wCheckEqual(ret, 0, "fail to deallocate pd");
 
   free(buffer_);

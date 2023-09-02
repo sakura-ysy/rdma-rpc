@@ -107,7 +107,7 @@ void Server::run() {
 }
 
 void Server::setupConnection(rdma_cm_event* cm_event, uint32_t n_buffer_page, uint32_t conn_id) {
-  Connection* conn = new Connection(this, cm_event->id, n_buffer_page, conn_id);
+  Connection* conn = new Connection(cm_event->id, n_buffer_page, conn_id);
   rdma_conn_param param = conn->copyConnParam();
   int ret = rdma_accept(cm_event->id, &param);
   checkEqual(ret, 0, "rdma_accept() failed");
