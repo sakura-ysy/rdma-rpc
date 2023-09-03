@@ -1,11 +1,14 @@
 #include <connection.h>
 #include <util.h>
 #include <macro.h>
+#include <iostream>
 
 Connection::Connection(rdma_cm_id* remote_id, uint32_t n_buffer_page, uint32_t conn_id)
     : remote_id_(remote_id),
       n_buffer_page_(n_buffer_page),
       id_(conn_id) {
+
+  info("start new connection");
 
   // create pd
   int ret = 0;
@@ -31,12 +34,13 @@ Connection::Connection(rdma_cm_id* remote_id, uint32_t n_buffer_page, uint32_t c
 
   // create mr
   size_t size = n_buffer_page * BUFFER_PAGE_SIZE;
-  buffer_ = malloc(n_buffer_page * BUFFER_PAGE_SIZE);
-  checkNotEqual(buffer_, static_cast<void*>(nullptr), "failedto malloc buffer_");
+  buffer_ = malloc(size);
+  checkNotEqual(buffer_, static_cast<void*>(nullptr), "malloc() failed to alloc buffer");
+
   int access = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE;
   buffer_mr_ = ibv_reg_mr(local_pd_, buffer_, size, access);
   checkNotEqual(buffer_mr_, static_cast<ibv_mr*>(nullptr), "ibv_reg_mr() falied, buffer_mr_ == nullptr");
-  info("create memory region(mr)");
+  info("create memory region(mr), size is %zu", size);
   
   // set param
   memset(&param_, 0, sizeof(rdma_conn_param));

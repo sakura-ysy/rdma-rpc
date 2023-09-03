@@ -21,7 +21,7 @@ public:
 private:
   static ibv_qp_init_attr defaultQpInitAttr();
 
-  uint32_t id_;
+  uint32_t id_;  // only for server
   rdma_cm_id* remote_id_;
   ibv_pd* local_pd_;
   ibv_cq* local_cq_;

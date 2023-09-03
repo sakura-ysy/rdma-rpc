@@ -1,6 +1,7 @@
 #include <server.h>
 #include <util.h>
 #include <macro.h>
+#include <iostream>
 
 Server::Server(const char* host, const char* port) : cur_conn_id_(0) {
   int ret = 0;
@@ -32,24 +33,28 @@ Server::Server(const char* host, const char* port) : cur_conn_id_(0) {
   // In order to avoid block
   base_ = event_base_new();
   checkNotEqual(base_, static_cast<event_base*>(nullptr), "event_base_new() failed");
-  conn_event_ = event_new(base_, cm_event_channel_->fd, EV_READ | EV_PERSIST, &Server::onConnecetionEvent, this); // bind the event to channel fd
+  conn_event_ = event_new(base_, cm_event_channel_->fd, EV_READ | EV_PERSIST, &Server::onConnectionEvent, this); // bind the event to channel fd
   checkNotEqual(conn_event_, static_cast<event*>(nullptr), "event_new() failed to create conn_event");
   ret = event_add(conn_event_, nullptr); // register the event
   checkEqual(ret, 0, "event_add() failed to register conn_event");
+}
 
-  // register a exit_event
-  exit_event_ = event_new(base_, SIGINT, EV_SIGNAL, &Server::onExitEvent, this);
-  checkNotEqual(exit_event_, static_cast<event*>(nullptr), "event_new() failed to create exit_event");
-  ret = event_add(exit_event_, nullptr);
-  checkEqual(ret, 0, "event_add() failed to register exit_event");
+Server::~Server() {
+  event_base_free(base_);
+  event_free(conn_event_);
+  event_free(exit_event_);
+  int ret = event_base_loopbreak(base_);
+  rdma_destroy_event_channel(cm_event_channel_);
+  freeaddrinfo(addr_);
+  info("clean up the server resources");
 }
 
 
-void Server::onConnecetionEvent([[gnu::unused]]evutil_socket_t fd, [[gnu::unused]]short what, void* arg) {
-  reinterpret_cast<Server*>(arg) -> handleConnecetionEvent();
+void Server::onConnectionEvent([[gnu::unused]]evutil_socket_t fd, [[gnu::unused]]short what, void* arg) {
+  reinterpret_cast<Server*>(arg) -> handleConnectionEvent();
 }
 
-void Server::handleConnecetionEvent() {
+void Server::handleConnectionEvent() {
   rdma_cm_event* cm_ev;
   // wait the client connect, blocking
   // But! must get value immediately because conn_event, so it's like non-blocking
@@ -64,7 +69,7 @@ void Server::handleConnecetionEvent() {
   switch(cm_ev->event) {
     case RDMA_CM_EVENT_CONNECT_REQUEST: {
       info("start to handle a connection request");
-      setupConnection(cm_ev, 1024, cur_conn_id_++);
+      setupConnection(cm_ev, 64, cur_conn_id_++);
       break;
     }
     case RDMA_CM_EVENT_ESTABLISHED: {
@@ -74,13 +79,11 @@ void Server::handleConnecetionEvent() {
       break;
     }
     case RDMA_CM_EVENT_DISCONNECTED: {
+      //std::cout << "cm_ev->id->context " << cm_ev->id->context << std::endl;
       Connection* conn = reinterpret_cast<Connection*>(cm_ev->id->context);
       conn_map_[conn->getId()] = nullptr;
       delete conn;
       info("delete the connection");
-
-      int ret = rdma_ack_cm_event(cm_ev);
-      wCheckEqual(ret, 0, "rdma_ack_cm_event() failed to ack event");
       break;
     }
     default: {
@@ -91,25 +94,19 @@ void Server::handleConnecetionEvent() {
 
 }
 
-void Server::onExitEvent([[gnu::unused]]evutil_socket_t fd, [[gnu::unused]]short what, void* arg) {
-  reinterpret_cast<Server*>(arg) -> handleExitEvent();
-}
-
-void Server::handleExitEvent() {
-  int ret = event_base_loopbreak(base_);
-  checkEqual(ret, 0, "event_base_loopbreak() failed");
-  info("stop event loop");
-}
 
 void Server::run() {
   info("start event loop for conection");
   event_base_dispatch(base_);
+  info("server ends");
 }
 
 void Server::setupConnection(rdma_cm_event* cm_event, uint32_t n_buffer_page, uint32_t conn_id) {
-  Connection* conn = new Connection(cm_event->id, n_buffer_page, conn_id);
+
+  rdma_cm_id* client_id = cm_event->id;
+  Connection* conn = new Connection(client_id, n_buffer_page, conn_id);
   rdma_conn_param param = conn->copyConnParam();
-  int ret = rdma_accept(cm_event->id, &param);
+  int ret = rdma_accept(client_id, &param);
   checkEqual(ret, 0, "rdma_accept() failed");
   uint32_t rkey = *(uint32_t*)(cm_event->param.conn.private_data);
   conn->setRkey(rkey);
@@ -118,7 +115,8 @@ void Server::setupConnection(rdma_cm_event* cm_event, uint32_t n_buffer_page, ui
   wCheckEqual(ret, 0, "rdma_ack_cm_event() failed to ack event");
   info("accept the connection");
 
-  cm_event->id->context = conn; // in order to release when client disconnect
+  client_id->context = reinterpret_cast<void*>(conn); // in order to release when client disconnect
+  //std::cout << "cm_event->id->context " << client_id->context << std::endl;
 
   conn_map_[conn->getId()] = conn;
 }

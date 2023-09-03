@@ -14,20 +14,20 @@
 
 class Connection;
 
+// one server can connect multiple clients;
 class Server {
 public:
   Server(const char* host, const char* port);
-  ~Server(){};
+  ~Server();
 
   void run();
-  void handleConnecetionEvent(); 
+  void handleConnectionEvent(); 
   void handleExitEvent();
 
   void setupConnection(rdma_cm_event* cm_event, uint32_t n_buffer_page, uint32_t conn_id);
 
 private:
-  static void onConnecetionEvent(evutil_socket_t fd, short what, void* arg);
-  static void onExitEvent(evutil_socket_t fd, short what, void* arg);
+  static void onConnectionEvent(evutil_socket_t fd, short what, void* arg);
 
   addrinfo* addr_;
   rdma_event_channel* cm_event_channel_;

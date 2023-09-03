@@ -12,13 +12,18 @@
 #include <connection.h>
 #include <unordered_map>
 
+// one client can only connect one server
 class Client {
 public:
   Client();
   ~Client();
 
+  void connect(const char* host, const char* port);
+  rdma_cm_event* waitEvent(rdma_cm_event_type expected);
+  void setupConnection(rdma_cm_id* cm_id, uint32_t n_buffer_page);
+
 private:
-  addrinfo* addr_;
+  addrinfo* dst_addr_;
   rdma_event_channel* cm_event_channel_;
   rdma_cm_id* cm_client_id_;
 
@@ -27,7 +32,4 @@ private:
   event* conn_event_;
   event* exit_event_;
 
-  // connection related
-  uint32_t cur_conn_id_;
-  std::unordered_map<uint32_t, Connection*> conn_map_;
 };
