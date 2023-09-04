@@ -13,11 +13,11 @@ Server::Server(const char* host, const char* port) : cur_conn_id_(0) {
   checkNotEqual(cm_event_channel_, static_cast<rdma_event_channel*>(nullptr), "rdma_create_event_channel() failed, cm_event_channel_ == nullptr");
   
   // rdma_cm_id is the connection identifier (like socket) which is used to define an RDMA connection. 
-	ret = rdma_create_id(cm_event_channel_, &cm_server_id_, nullptr, RDMA_PS_TCP);
+	ret = rdma_create_id(cm_event_channel_, &server_id_, nullptr, RDMA_PS_TCP);
   checkEqual(ret, 0, "rdma_create_id() failed");
 
   // Explicit binding of rdma cm id to the socket credentials
-  ret = rdma_bind_addr(cm_server_id_, addr_->ai_addr);
+  ret = rdma_bind_addr(server_id_, addr_->ai_addr);
   checkEqual(ret, 0 ,"rdma_bind_addr() failed");
 
   // Now we start to listen on the passed IP and port. However unlike
@@ -25,7 +25,7 @@ Server::Server(const char* host, const char* port) : cur_conn_id_(0) {
 	// connected, a new connection management (CM) event is generated on the 
 	// RDMA CM event channel from where the listening id was created. Here we
 	// have only one channel, so it is easy.
-  ret = rdma_listen(cm_server_id_, DEFAULT_BACK_LOG); // backlog is the max clients num, same as tcp, see 'man listen'
+  ret = rdma_listen(server_id_, DEFAULT_BACK_LOG); // backlog is the max clients num, same as tcp, see 'man listen'
   checkEqual(ret, 0, "rdma_listen() failed");
   info("start listening, address: %s:%s", host, port); 
 
@@ -79,7 +79,6 @@ void Server::handleConnectionEvent() {
       break;
     }
     case RDMA_CM_EVENT_DISCONNECTED: {
-      //std::cout << "cm_ev->id->context " << cm_ev->id->context << std::endl;
       Connection* conn = reinterpret_cast<Connection*>(cm_ev->id->context);
       conn_map_[conn->getId()] = nullptr;
       delete conn;
@@ -116,7 +115,6 @@ void Server::setupConnection(rdma_cm_event* cm_event, uint32_t n_buffer_page, ui
   info("accept the connection");
 
   client_id->context = reinterpret_cast<void*>(conn); // in order to release when client disconnect
-  //std::cout << "cm_event->id->context " << client_id->context << std::endl;
 
   conn_map_[conn->getId()] = conn;
 }

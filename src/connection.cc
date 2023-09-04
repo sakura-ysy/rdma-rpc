@@ -3,8 +3,8 @@
 #include <macro.h>
 #include <iostream>
 
-Connection::Connection(rdma_cm_id* remote_id, uint32_t n_buffer_page, uint32_t conn_id)
-    : remote_id_(remote_id),
+Connection::Connection(rdma_cm_id* cm_id, uint32_t n_buffer_page, uint32_t conn_id)
+    : cm_id_(cm_id),
       n_buffer_page_(n_buffer_page),
       id_(conn_id) {
 
@@ -12,14 +12,14 @@ Connection::Connection(rdma_cm_id* remote_id, uint32_t n_buffer_page, uint32_t c
 
   // create pd
   int ret = 0;
-  local_pd_ = ibv_alloc_pd(remote_id->verbs);
+  local_pd_ = ibv_alloc_pd(cm_id_->verbs);
   checkNotEqual(local_pd_, static_cast<ibv_pd*>(nullptr), "ibv_alloc_pd() failed, server_pd_ == nullptr"); 
 
   // create cq
-  local_cq_ = ibv_create_cq(remote_id->verbs, DEFAULT_CQ_CAPACITY, this, nullptr, 0);
+  local_cq_ = ibv_create_cq(cm_id_->verbs, DEFAULT_CQ_CAPACITY, this, nullptr, 0);
   checkNotEqual(local_cq_, static_cast<ibv_cq*>(nullptr), "ibv_create_cq() failed, server_cq_ == nullptr");
-  remote_id->recv_cq = local_cq_;
-  remote_id->send_cq = local_cq_;
+  cm_id_->recv_cq = local_cq_;
+  cm_id_->send_cq = local_cq_;
   info("create protection domain(pd) and completion queue(cq)");
 
   ibv_qp_init_attr init_attr = defaultQpInitAttr();
@@ -27,9 +27,11 @@ Connection::Connection(rdma_cm_id* remote_id, uint32_t n_buffer_page, uint32_t c
   init_attr.recv_cq = local_cq_;
 
   // create qp
-  ret = rdma_create_qp(remote_id, local_pd_, &init_attr);
+  // rdma_create_qp() will create a qp and store it's address to cm_id->qp.
+  // we should record the qp in Connection.
+  ret = rdma_create_qp(cm_id_, local_pd_, &init_attr);
+  local_qp_ = cm_id_->qp;
   checkEqual(ret, 0, "rdma_create_qp() failed");
-  remote_qp_ = remote_id->qp;
   info("create queue pair(qp)");
 
   // create mr
@@ -55,15 +57,15 @@ Connection::Connection(rdma_cm_id* remote_id, uint32_t n_buffer_page, uint32_t c
 Connection::~Connection() {
   int ret = 0;
 
-  ret = ibv_destroy_qp(remote_qp_);
+  ret = ibv_destroy_qp(local_qp_);
   wCheckEqual(ret, 0, "fail to destroy qp");
 
-  ret = ibv_destroy_cq(local_cq_);
-  wCheckEqual(ret, 0, "fail to destroy cq");
+  // ret = ibv_destroy_cq(local_cq_);
+  // wCheckEqual(ret, 0, "fail to destroy cq");
 
-  ret = rdma_destroy_id(remote_id_);
-  wCheckEqual(ret, 0, "fail to destroy id");
-
+  // ret = rdma_destroy_id(cm_id_);
+  // wCheckEqual(ret, 0, "fail to destroy cm_id");
+  
   ret = ibv_dereg_mr(buffer_mr_);
   wCheckEqual(ret, 0, "fail to deregister buffer memory region");
 

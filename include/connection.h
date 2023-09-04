@@ -11,7 +11,10 @@ class Server;
 
 class Connection {
 public:
-  Connection(rdma_cm_id* remote_id, uint32_t n_buffer_page, uint32_t conn_id);
+
+  // for client, the cm_id is local,
+  // for server, the cm_id is remote
+  Connection(rdma_cm_id* cm_id, uint32_t n_buffer_page, uint32_t conn_id);
   ~Connection();
 
   rdma_conn_param copyConnParam();
@@ -22,10 +25,12 @@ private:
   static ibv_qp_init_attr defaultQpInitAttr();
 
   uint32_t id_;  // only for server
-  rdma_cm_id* remote_id_;
+  // for client, it presents the local cm_id,
+  // for server, it presents the remote(client) cm_id
+  rdma_cm_id* cm_id_;
   ibv_pd* local_pd_;
   ibv_cq* local_cq_;
-  ibv_qp* remote_qp_;
+  ibv_qp* local_qp_;
   void* buffer_;
   uint32_t n_buffer_page_;
   ibv_mr* buffer_mr_;

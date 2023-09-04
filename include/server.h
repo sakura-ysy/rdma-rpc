@@ -31,7 +31,7 @@ private:
 
   addrinfo* addr_;
   rdma_event_channel* cm_event_channel_;
-  rdma_cm_id* cm_server_id_;
+  rdma_cm_id* server_id_;
 
   // event-driven, to avoid the block
   event_base* base_;

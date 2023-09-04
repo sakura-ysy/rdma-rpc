@@ -25,11 +25,13 @@ public:
 private:
   addrinfo* dst_addr_;
   rdma_event_channel* cm_event_channel_;
-  rdma_cm_id* cm_client_id_;
+  rdma_cm_id* client_id_;
 
   // event-driven, to avoid the block
   event_base* base_;
   event* conn_event_;
   event* exit_event_;
 
+  // connection related
+  Connection* conn_;
 };
