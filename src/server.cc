@@ -80,6 +80,8 @@ void Server::handleConnectionEvent() {
     }
     case RDMA_CM_EVENT_DISCONNECTED: {
       Connection* conn = reinterpret_cast<Connection*>(cm_ev->id->context);
+      int ret = rdma_ack_cm_event(cm_ev);
+      wCheckEqual(ret, 0, "rdma_ack_cm_event() failed to ack event");
       conn_map_[conn->getId()] = nullptr;
       delete conn;
       info("delete the connection");

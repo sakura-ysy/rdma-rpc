@@ -55,16 +55,19 @@ Connection::Connection(rdma_cm_id* cm_id, uint32_t n_buffer_page, uint32_t conn_
 }
 
 Connection::~Connection() {
+
   int ret = 0;
 
   ret = ibv_destroy_qp(local_qp_);
   wCheckEqual(ret, 0, "fail to destroy qp");
 
-  // ret = ibv_destroy_cq(local_cq_);
-  // wCheckEqual(ret, 0, "fail to destroy cq");
+  // warnning! you must ack all events before destroy cq,
+  // otherwise, the func would never end.
+  ret = ibv_destroy_cq(local_cq_);
+  wCheckEqual(ret, 0, "fail to destroy cq");
 
-  // ret = rdma_destroy_id(cm_id_);
-  // wCheckEqual(ret, 0, "fail to destroy cm_id");
+  ret = rdma_destroy_id(cm_id_);
+  wCheckEqual(ret, 0, "fail to destroy cm_id");
   
   ret = ibv_dereg_mr(buffer_mr_);
   wCheckEqual(ret, 0, "fail to deregister buffer memory region");
