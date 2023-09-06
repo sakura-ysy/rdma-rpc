@@ -2,8 +2,10 @@
 #include <util.h>
 #include <macro.h>
 #include <iostream>
+#include <mutex>
 
-Server::Server(const char* host, const char* port) : cur_conn_id_(0) {
+Server::Server(const char* host, const char* port) {
+
   int ret = 0;
   ret = getaddrinfo(host, port, nullptr, &addr_);
   checkEqual(ret, 0, "getaddrinfo() failed");
@@ -13,11 +15,11 @@ Server::Server(const char* host, const char* port) : cur_conn_id_(0) {
   checkNotEqual(cm_event_channel_, static_cast<rdma_event_channel*>(nullptr), "rdma_create_event_channel() failed, cm_event_channel_ == nullptr");
   
   // rdma_cm_id is the connection identifier (like socket) which is used to define an RDMA connection. 
-	ret = rdma_create_id(cm_event_channel_, &server_id_, nullptr, RDMA_PS_TCP);
+	ret = rdma_create_id(cm_event_channel_, &listen_cm_id_, nullptr, RDMA_PS_TCP);
   checkEqual(ret, 0, "rdma_create_id() failed");
 
   // Explicit binding of rdma cm id to the socket credentials
-  ret = rdma_bind_addr(server_id_, addr_->ai_addr);
+  ret = rdma_bind_addr(listen_cm_id_, addr_->ai_addr);
   checkEqual(ret, 0 ,"rdma_bind_addr() failed");
 
   // Now we start to listen on the passed IP and port. However unlike
@@ -25,7 +27,7 @@ Server::Server(const char* host, const char* port) : cur_conn_id_(0) {
 	// connected, a new connection management (CM) event is generated on the 
 	// RDMA CM event channel from where the listening id was created. Here we
 	// have only one channel, so it is easy.
-  ret = rdma_listen(server_id_, DEFAULT_BACK_LOG); // backlog is the max clients num, same as tcp, see 'man listen'
+  ret = rdma_listen(listen_cm_id_, DEFAULT_BACK_LOG); // backlog is the max clients num, same as tcp, see 'man listen'
   checkEqual(ret, 0, "rdma_listen() failed");
   info("start listening, address: %s:%s", host, port); 
 
@@ -69,7 +71,7 @@ void Server::handleConnectionEvent() {
   switch(cm_ev->event) {
     case RDMA_CM_EVENT_CONNECT_REQUEST: {
       info("start to handle a connection request");
-      setupConnection(cm_ev, 64, cur_conn_id_++);
+      setupConnection(cm_ev, 64);
       break;
     }
     case RDMA_CM_EVENT_ESTABLISHED: {
@@ -81,9 +83,9 @@ void Server::handleConnectionEvent() {
     case RDMA_CM_EVENT_DISCONNECTED: {
       Connection* conn = reinterpret_cast<Connection*>(cm_ev->id->context);
       int ret = rdma_ack_cm_event(cm_ev);
+      info("send disconnect ack");
       wCheckEqual(ret, 0, "rdma_ack_cm_event() failed to ack event");
-      conn_map_[conn->getId()] = nullptr;
-      delete conn;
+      poller_.deregisterConn(conn);
       info("delete the connection");
       break;
     }
@@ -102,10 +104,10 @@ void Server::run() {
   info("server ends");
 }
 
-void Server::setupConnection(rdma_cm_event* cm_event, uint32_t n_buffer_page, uint32_t conn_id) {
+void Server::setupConnection(rdma_cm_event* cm_event, uint32_t n_buffer_page) {
 
   rdma_cm_id* client_id = cm_event->id;
-  Connection* conn = new Connection(client_id, n_buffer_page, conn_id);
+  Connection* conn = new Connection(client_id, n_buffer_page);
   rdma_conn_param param = conn->copyConnParam();
   int ret = rdma_accept(client_id, &param);
   checkEqual(ret, 0, "rdma_accept() failed");
@@ -116,7 +118,34 @@ void Server::setupConnection(rdma_cm_event* cm_event, uint32_t n_buffer_page, ui
   wCheckEqual(ret, 0, "rdma_ack_cm_event() failed to ack event");
   info("accept the connection");
 
-  client_id->context = reinterpret_cast<void*>(conn); // in order to release when client disconnect
+  poller_.registerConn(conn);
 
-  conn_map_[conn->getId()] = conn;
+  client_id->context = reinterpret_cast<void*>(conn); // in order to release when client disconnect
+}
+
+
+/* ServerPoller */
+ServerPoller::ServerPoller() {
+
+}
+
+ServerPoller::~ServerPoller() {
+  std::lock_guard<Spinlock> lock(lock_);
+  conn_list_.clear();
+}
+
+void ServerPoller::registerConn(Connection* conn) {
+  std::lock_guard<Spinlock> lock(lock_);
+  conn_list_.emplace_back(conn);
+}
+
+void ServerPoller::deregisterConn(Connection* conn) {
+  std::lock_guard<Spinlock> lock(lock_);
+  for (auto it = conn_list_.begin(); it != conn_list_.end(); it++) {
+    if ((*it) == conn) {
+      conn_list_.erase(it);
+      delete conn;
+      break;
+    }
+  }
 }

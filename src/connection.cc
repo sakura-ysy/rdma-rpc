@@ -2,11 +2,12 @@
 #include <util.h>
 #include <macro.h>
 #include <iostream>
+#include <mutex>
 
-Connection::Connection(rdma_cm_id* cm_id, uint32_t n_buffer_page, uint32_t conn_id)
+/* Connection */
+Connection::Connection(rdma_cm_id* cm_id, uint32_t n_buffer_page)
     : cm_id_(cm_id),
-      n_buffer_page_(n_buffer_page),
-      id_(conn_id) {
+      n_buffer_page_(n_buffer_page) {
 
   info("start new connection");
 
@@ -77,7 +78,7 @@ Connection::~Connection() {
 
   free(buffer_);
 
-  info("cleanup connection resources");
+  info("clean up connection resources");
 }
 
 ibv_qp_init_attr Connection::defaultQpInitAttr() {
@@ -106,6 +107,6 @@ void Connection::setRkey(uint32_t rkey) {
   rkey_ = rkey;
 }
 
-uint32_t Connection::getId() {
-  return id_;
+rdma_cm_id* Connection::getCmId() {
+  return cm_id_;
 }

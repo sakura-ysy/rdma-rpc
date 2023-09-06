@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <event2/event.h>
 #include <server.h>
+#include <misc.h>
 
 class Server;
 
@@ -14,17 +15,16 @@ public:
 
   // for client, the cm_id is local,
   // for server, the cm_id is remote
-  Connection(rdma_cm_id* cm_id, uint32_t n_buffer_page, uint32_t conn_id);
+  Connection(rdma_cm_id* cm_id, uint32_t n_buffer_page);
   ~Connection();
 
   rdma_conn_param copyConnParam();
   void setRkey(uint32_t rkey);
-  uint32_t getId();
+  rdma_cm_id* getCmId();
   
 private:
   static ibv_qp_init_attr defaultQpInitAttr();
 
-  uint32_t id_;  // only for server
   // for client, it presents the local cm_id,
   // for server, it presents the remote(client) cm_id
   rdma_cm_id* cm_id_;

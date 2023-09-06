@@ -10,7 +10,22 @@
 #include <signal.h>
 #include <event2/event.h>
 #include <connection.h>
-#include <unordered_map>
+#include <misc.h>
+#include <list>
+
+class ClientPoller {
+public:
+  ClientPoller();
+  ~ClientPoller();
+
+  void registerConn(Connection* conn);
+  void deregisterConn();
+
+private:
+  Spinlock lock_{};
+  Connection* conn_;
+};
+
 
 // one client can only connect one server
 class Client {
@@ -23,15 +38,15 @@ public:
   void setupConnection(rdma_cm_id* cm_id, uint32_t n_buffer_page);
 
 private:
-  addrinfo* dst_addr_;
-  rdma_event_channel* cm_event_channel_;
-  rdma_cm_id* client_id_;
+  rdma_cm_id* cm_id_;  // only one qp, so only one cm_id
+  addrinfo* dst_addr_{nullptr};
+  rdma_event_channel* cm_event_channel_{nullptr};
 
   // event-driven, to avoid the block
-  event_base* base_;
-  event* conn_event_;
-  event* exit_event_;
+  event_base* base_{nullptr};
+  event* conn_event_{nullptr};
+  event* exit_event_{nullptr};
 
   // connection related
-  Connection* conn_;
+  ClientPoller poller_{};
 };

@@ -10,9 +10,25 @@
 #include <signal.h>
 #include <event2/event.h>
 #include <connection.h>
-#include <unordered_map>
+#include <misc.h>
+#include <list>
 
 class Connection;
+
+
+class ServerPoller {
+public:
+  ServerPoller();
+  ~ServerPoller();
+
+  void registerConn(Connection* conn);
+  void deregisterConn(Connection* conn);
+
+private:
+  Spinlock lock_{};
+  std::list<Connection*> conn_list_;
+};
+
 
 // one server can connect multiple clients;
 class Server {
@@ -24,21 +40,20 @@ public:
   void handleConnectionEvent(); 
   void handleExitEvent();
 
-  void setupConnection(rdma_cm_event* cm_event, uint32_t n_buffer_page, uint32_t conn_id);
+  void setupConnection(rdma_cm_event* cm_event, uint32_t n_buffer_page);
 
 private:
   static void onConnectionEvent(evutil_socket_t fd, short what, void* arg);
 
-  addrinfo* addr_;
-  rdma_event_channel* cm_event_channel_;
-  rdma_cm_id* server_id_;
+  addrinfo* addr_{nullptr};
+  rdma_event_channel* cm_event_channel_{nullptr};
+  rdma_cm_id* listen_cm_id_{nullptr};
 
   // event-driven, to avoid the block
-  event_base* base_;
-  event* conn_event_;
-  event* exit_event_;
+  event_base* base_{nullptr};
+  event* conn_event_{nullptr};
+  event* exit_event_{nullptr};
 
-  // client connection related
-  uint32_t cur_conn_id_;
-  std::unordered_map<uint32_t, Connection*> conn_map_;
+  // poller
+  ServerPoller poller_{};
 };
