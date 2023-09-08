@@ -3,6 +3,7 @@
 #include <macro.h>
 #include <iostream>
 #include <mutex>
+#include <message.h>
 
 Client::Client() {
   cm_event_channel_ = rdma_create_event_channel();
@@ -35,11 +36,6 @@ void Client::connect(const char* host, const char* port) {
   ret = rdma_resolve_addr(cm_id_, nullptr, dst_addr_->ai_addr, DEFAULT_CONNECTION_TIMEOUT);  // non-block
   checkEqual(ret, 0, "rdma_resolve_addr() failed");
   rdma_cm_event* cm_event = waitEvent(RDMA_CM_EVENT_ADDR_RESOLVED);  // block
-
-  if(cm_event == nullptr) {
-    std::cout << "cm_event == nullptr" << std::endl;
-  }
-
   checkNotEqual(cm_event, static_cast<rdma_cm_event*>(nullptr), "failed to resolve the address");
   ret = rdma_ack_cm_event(cm_event);
   checkEqual(ret, 0, "rdma_ack_cm_event() failed to send ack");
@@ -79,10 +75,7 @@ rdma_cm_event* Client::waitEvent(rdma_cm_event_type expected) {
 }
 
 void Client::setupConnection(rdma_cm_id* client_id, uint32_t n_buffer_page) {
-
-  std::cout << client_id << std::endl;
-
-  Connection* conn = new Connection(client_id, n_buffer_page);
+  Connection* conn = new Connection(Role::ClientConn, client_id, n_buffer_page);
   rdma_conn_param param = conn->copyConnParam();
   int ret = rdma_connect(client_id, &param);
   checkEqual(ret, 0, "rdma_connect() failed");
@@ -91,6 +84,12 @@ void Client::setupConnection(rdma_cm_id* client_id, uint32_t n_buffer_page) {
   info("connection is established");
 
   poller_.registerConn(conn);
+}
+
+void Client::sendRequest(std::string msg) {
+  Message req((void*)(msg.c_str()), msg.length(), MessageType::ImmRequest);
+  poller_.sendRequest(req);  
+  info("finish post request send");
 }
 
 
@@ -111,4 +110,11 @@ void ClientPoller::registerConn(Connection* conn) {
 void ClientPoller::deregisterConn() {
   std::lock_guard<Spinlock> lock(lock_);
   delete conn_;
+}
+
+void ClientPoller::sendRequest(Message req) {
+  std::lock_guard<Spinlock> lock(lock_);
+  conn_->fillMR((void*)&req, sizeof(req));
+
+  conn_->postSend(conn_, conn_->getMRAddr(), sizeof(req),  conn_->getLKey(),  conn_->getRKey(), false);
 }

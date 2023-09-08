@@ -12,6 +12,7 @@
 #include <connection.h>
 #include <misc.h>
 #include <list>
+#include <thread>
 
 class Connection;
 
@@ -24,9 +25,15 @@ public:
   void registerConn(Connection* conn);
   void deregisterConn(Connection* conn);
 
+  void run();
+  void stop();
+  void poll();
+
 private:
+  std::atomic_bool running_{false};
   Spinlock lock_{};
   std::list<Connection*> conn_list_;
+  std::thread poll_thread_;
 };
 
 

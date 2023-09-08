@@ -3,10 +3,13 @@
 #include <macro.h>
 #include <iostream>
 #include <mutex>
+#include <message.h>
+#include <assert.h>
 
 /* Connection */
-Connection::Connection(rdma_cm_id* cm_id, uint32_t n_buffer_page)
-    : cm_id_(cm_id),
+Connection::Connection(Role role, rdma_cm_id* cm_id, uint32_t n_buffer_page)
+    : role_(role),
+      cm_id_(cm_id),
       n_buffer_page_(n_buffer_page) {
 
   info("start new connection");
@@ -53,11 +56,18 @@ Connection::Connection(rdma_cm_id* cm_id, uint32_t n_buffer_page)
   param_.initiator_depth = 16;
   param_.rnr_retry_count = 7;
   info("initialize connection parameters");
+  
+  // prepare recv
+  prepare();
+  info("connection prepares");
 }
 
 Connection::~Connection() {
 
   int ret = 0;
+
+  ret = rdma_destroy_id(cm_id_);
+  wCheckEqual(ret, 0, "fail to destroy cm_id");
 
   ret = ibv_destroy_qp(local_qp_);
   wCheckEqual(ret, 0, "fail to destroy qp");
@@ -66,9 +76,6 @@ Connection::~Connection() {
   // otherwise, the func would never end.
   ret = ibv_destroy_cq(local_cq_);
   wCheckEqual(ret, 0, "fail to destroy cq");
-
-  ret = rdma_destroy_id(cm_id_);
-  wCheckEqual(ret, 0, "fail to destroy cm_id");
   
   ret = ibv_dereg_mr(buffer_mr_);
   wCheckEqual(ret, 0, "fail to deregister buffer memory region");
@@ -110,3 +117,147 @@ void Connection::setRkey(uint32_t rkey) {
 rdma_cm_id* Connection::getCmId() {
   return cm_id_;
 }
+
+uint32_t Connection::getLKey() {
+  return buffer_mr_->lkey;
+}
+
+uint32_t Connection::getRKey() {
+  return buffer_mr_->rkey;
+}
+
+void* Connection::getMRAddr() {
+  return buffer_mr_->addr;
+}
+
+void Connection::postSend(void* ctx, void* local_addr, uint32_t length, uint32_t lkey, uint32_t rkey, bool need_inline){
+  ibv_sge sge {
+    (uint64_t) local_addr, // addr
+    length,                // length
+    lkey,                  // lkey
+  };
+  ibv_send_wr wr {
+    (uintptr_t) ctx,       // wr_id
+    nullptr,               // next
+    &sge,                  // sg_list
+    1,                     // num_sge
+    IBV_WR_SEND_WITH_IMM,           // opcode
+    IBV_SEND_SIGNALED,     // send_flags
+    {},
+    {},
+    {},
+    {},
+  };
+
+  wr.imm_data = rkey;
+
+  if (need_inline) {
+    wr.send_flags |= IBV_SEND_INLINE;
+  }
+
+  ibv_send_wr* bad_wr = nullptr;
+  int ret = ibv_post_send(local_qp_, &wr, &bad_wr);
+  checkEqual(ret, 0, "ibv_post_send() failed");
+}
+
+
+void Connection::postRecv(void* ctx, void* local_addr, uint32_t length, uint32_t lkey) {
+  ibv_sge sge {
+    (uint64_t) local_addr,  // addr
+    length,                // length
+    lkey,                  // lkey
+  };
+  ibv_recv_wr wr {
+    (uintptr_t) ctx,       // wr_id
+    nullptr,               // next
+    &sge,                  // sg_list
+    1,                     // num_sge
+  };
+
+  ibv_recv_wr* bad_wr = nullptr;
+  int ret = ibv_post_recv(local_qp_, &wr, &bad_wr);
+  checkEqual(ret, 0, "ibv_post_recv() failed");
+}
+
+void Connection::fillMR(void* data, uint32_t size) {
+  assert(size <= buffer_mr_->length);
+  for (int i = 0; i < size; i++)
+  {
+    *((char*)(buffer_mr_->addr) + i) = *((char*)(data) + i);  
+  }
+  
+  // Message* req = reinterpret_cast<Message*> (buffer_mr_->addr);
+  // for (int i = 0; i < req->dataLen(); i++)
+  // {
+  //   std::cout << *((char*)(req->dataAddr()) + i) << std::endl;
+  // }
+}
+
+void Connection::prepare() {
+  postRecv(this, buffer_mr_->addr, buffer_mr_->length, buffer_mr_->lkey);
+  switch (role_) {
+  case Role::ServerConn : {
+    state_ = State::WaitingForRequest;
+    break;
+  }
+  case Role::ClientConn : {
+    state_ = State::WaitingForResponse;
+    break;
+  }
+  default : {
+    checkNotEqual(0, 0, "Connection has wrong role");
+  }
+  }
+}
+
+void Connection::poll() {
+
+  static ibv_wc wc[DEFAULT_CQ_CAPACITY];
+  int ret = ibv_poll_cq(local_cq_, DEFAULT_CQ_CAPACITY, wc);
+  if (ret < 0) {
+    info("poll cq error");
+    return;
+  } else if (ret == 0) {
+    //info("get no cq");
+    return;
+  }
+
+  for (int i = 0; i < ret; i++) {
+    Connection* conn =  reinterpret_cast<Connection*>(wc[i].wr_id);
+    switch (conn->role_){
+    case Role::ServerConn: {
+      conn->serverAdvance(wc[i]);
+      break;
+    }
+    case Role::ClientConn: {
+      conn->clientAdvance(wc[i]);
+      break;
+    }
+    }
+
+  }
+}
+
+void Connection::serverAdvance(const ibv_wc &wc) {
+  std::cout << "serverAdvance()" << std::endl;
+  switch (wc.opcode) {
+  case IBV_WC_RECV: {
+    // todo 
+    break;
+  }
+  case IBV_WC_RDMA_READ: {
+    // todo
+    break;
+  }
+  case IBV_WC_RDMA_WRITE: {
+    // todo
+    break;
+  }
+  default: {
+    info("unexpected wc opcode: %d", wc.opcode);
+    break;
+  }
+  }
+}
+
+void Connection::clientAdvance(const ibv_wc &wc) {}

@@ -99,15 +99,18 @@ void Server::handleConnectionEvent() {
 
 
 void Server::run() {
+  // run poller
+  poller_.run();
+  // listen connection
   info("start event loop for conection");
+  info("==============================");
   event_base_dispatch(base_);
-  info("server ends");
 }
 
 void Server::setupConnection(rdma_cm_event* cm_event, uint32_t n_buffer_page) {
 
   rdma_cm_id* client_id = cm_event->id;
-  Connection* conn = new Connection(client_id, n_buffer_page);
+  Connection* conn = new Connection(Role::ServerConn, client_id, n_buffer_page);
   rdma_conn_param param = conn->copyConnParam();
   int ret = rdma_accept(client_id, &param);
   checkEqual(ret, 0, "rdma_accept() failed");
@@ -149,3 +152,28 @@ void ServerPoller::deregisterConn(Connection* conn) {
     }
   }
 }
+
+void ServerPoller::run() {
+  running_.store(true, std::memory_order_release);
+  poll_thread_ = std::thread(&ServerPoller::poll, this);
+  info("start running server poller");
+}
+
+void ServerPoller::stop() {
+  if (running_.load(std::memory_order_acquire)) {
+    running_.store(false, std::memory_order_release);
+    poll_thread_.join();
+    info("connection poller stopped");
+  }
+}
+
+void ServerPoller::poll() {
+
+  while (running_.load(std::memory_order_acquire)) {
+    std::lock_guard<Spinlock> lock(lock_);
+    for (auto conn : conn_list_) {
+      conn->poll();
+    }
+  }
+}
+

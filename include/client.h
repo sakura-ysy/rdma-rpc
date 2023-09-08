@@ -12,6 +12,8 @@
 #include <connection.h>
 #include <misc.h>
 #include <list>
+#include <string>
+#include <message.h>
 
 class ClientPoller {
 public:
@@ -20,6 +22,7 @@ public:
 
   void registerConn(Connection* conn);
   void deregisterConn();
+  void sendRequest(Message req);
 
 private:
   Spinlock lock_{};
@@ -36,6 +39,8 @@ public:
   void connect(const char* host, const char* port);
   rdma_cm_event* waitEvent(rdma_cm_event_type expected);
   void setupConnection(rdma_cm_id* cm_id, uint32_t n_buffer_page);
+
+  void sendRequest(std::string msg);
 
 private:
   rdma_cm_id* cm_id_;  // only one qp, so only one cm_id
