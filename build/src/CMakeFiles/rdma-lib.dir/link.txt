@@ -1,0 +1,2 @@
+/usr/bin/ar qc librdma-lib.a "CMakeFiles/rdma-lib.dir/client.cc.o" "CMakeFiles/rdma-lib.dir/connection.cc.o" "CMakeFiles/rdma-lib.dir/context.cc.o" "CMakeFiles/rdma-lib.dir/handler.cc.o" "CMakeFiles/rdma-lib.dir/message.cc.o" "CMakeFiles/rdma-lib.dir/server.cc.o"
+/usr/bin/ranlib librdma-lib.a
