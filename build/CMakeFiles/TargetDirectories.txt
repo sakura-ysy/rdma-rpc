@@ -1,0 +1,9 @@
+/home/ysy/rdma-rpc/build/CMakeFiles/edit_cache.dir
+/home/ysy/rdma-rpc/build/CMakeFiles/rebuild_cache.dir
+/home/ysy/rdma-rpc/build/src/CMakeFiles/rdma-lib.dir
+/home/ysy/rdma-rpc/build/src/CMakeFiles/edit_cache.dir
+/home/ysy/rdma-rpc/build/src/CMakeFiles/rebuild_cache.dir
+/home/ysy/rdma-rpc/build/app/CMakeFiles/server.dir
+/home/ysy/rdma-rpc/build/app/CMakeFiles/client.dir
+/home/ysy/rdma-rpc/build/app/CMakeFiles/edit_cache.dir
+/home/ysy/rdma-rpc/build/app/CMakeFiles/rebuild_cache.dir
