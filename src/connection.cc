@@ -240,8 +240,8 @@ void Connection::clientAdvance(const ibv_wc &wc) {
     Message* resp = reinterpret_cast<Message*>(ctx->addr());
     if(resp->msgType() == Response) {
       info("receive response from server, resp data is: %s", resp->dataAddr());
-      unlock();
       state_ = Vacant;
+      unlock();
     }
     break;
   }

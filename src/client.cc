@@ -91,7 +91,6 @@ void Client::setupConnection(rdma_cm_id* client_id, uint32_t n_buffer_page) {
 void Client::sendRequest(std::string msg) {
   Message req((char*)msg.c_str(), msg.length(), MessageType::ImmRequest);
   poller_.sendRequest(req);  
-  info("post send reqeust, req data is: %s", msg.c_str());
 }
 
 
@@ -117,6 +116,7 @@ void ClientPoller::deregisterConn() {
 void ClientPoller::sendRequest(Message req) {
   conn_->lock(); // unlock when receive response;
   conn_->fillMR((void*)&req, sizeof(req));
+  info("post send reqeust, req data is: %s", req.dataAddr());
   conn_->postSend(conn_->getMRAddr(), sizeof(req),  conn_->getLKey(), false);
 }
 
