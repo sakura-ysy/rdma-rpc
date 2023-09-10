@@ -1,14 +1,11 @@
 #pragma once
 #include <stdint.h>
 #include <string>
+#include <macro.h>
 
 class [[gnu::packed]] BufferMeta {
 public:
-  explicit BufferMeta(void *buf = nullptr);
-  ~BufferMeta() = default;
-
-public:
-  void *buf_{nullptr};
+   char buf_[MESSAGE_BUF_SIZE]{};
 };
 
 enum MessageType {
@@ -20,22 +17,22 @@ enum MessageType {
 
 class [[gnu::packed]] Header {
 public:
-  void *addr_{nullptr};
-  uint32_t data_len_{0};
+  uint32_t data_len_{};
   MessageType type_{Dummy};
 };
 
 
 class [[gnu::packed]] Message {
 public:
-  explicit Message(void* buf, uint32_t len, MessageType type);
+  explicit Message(char* buf, uint32_t len, MessageType type);
   ~Message();
 
-  void* dataAddr();
+  char* dataAddr();
   uint32_t dataLen();
-  
+  MessageType msgType();
+
 private:
   Header header_{};
-  BufferMeta meta_{};
+  BufferMeta meta_;
 };
 

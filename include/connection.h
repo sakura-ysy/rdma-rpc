@@ -7,6 +7,7 @@
 #include <event2/event.h>
 #include <server.h>
 #include <misc.h>
+#include <handler.h>
 
 class Server;
 
@@ -17,12 +18,12 @@ enum Role : int32_t {
 };
 
 enum State : int32_t {
-  Vacant,
-  WaitingForRequest,
-  WaitingForResponse,
-  HandlingRequest,
-  WritingResponse,
+  Vacant,              // Server & Client
+  WaitingForRequest,   // Server
+  WaitingForResponse,  // Client
+  HandlingRequest,     // Server
 };
+
 
 class Connection {
 public:
@@ -41,10 +42,11 @@ public:
   uint32_t getRKey();
   void* getMRAddr();
 
+  void postSend(void* local_addr, uint32_t length, uint32_t lkey, bool need_inline);
+  void postRecv(void* local_addr, uint32_t length, uint32_t lkey);
+  void lock();
+  void unlock();
   
-  void postSend(void* ctx, void* local_addr, uint32_t length, uint32_t lkey, uint32_t rkey, bool need_inline);
-  void postRecv(void* ctx, void* local_addr, uint32_t length, uint32_t lkey);
-
   void fillMR(void* data, uint32_t size);
 
   void prepare();
@@ -69,4 +71,8 @@ private:
   rdma_conn_param param_;
   uint32_t rkey_;
   uint32_t lkey_;
+  Spinlock lock_{};
+
+  // hander;
+  Handler handler_{};
 };

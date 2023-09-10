@@ -5,6 +5,7 @@
 #include <mutex>
 #include <message.h>
 #include <assert.h>
+#include <context.h>
 
 /* Connection */
 Connection::Connection(Role role, rdma_cm_id* cm_id, uint32_t n_buffer_page)
@@ -65,6 +66,9 @@ Connection::Connection(Role role, rdma_cm_id* cm_id, uint32_t n_buffer_page)
 Connection::~Connection() {
 
   int ret = 0;
+
+  // clear the memory
+  memset(buffer_mr_->addr, 0 ,buffer_mr_->length);
 
   ret = rdma_destroy_id(cm_id_);
   wCheckEqual(ret, 0, "fail to destroy cm_id");
@@ -130,54 +134,6 @@ void* Connection::getMRAddr() {
   return buffer_mr_->addr;
 }
 
-void Connection::postSend(void* ctx, void* local_addr, uint32_t length, uint32_t lkey, uint32_t rkey, bool need_inline){
-  ibv_sge sge {
-    (uint64_t) local_addr, // addr
-    length,                // length
-    lkey,                  // lkey
-  };
-  ibv_send_wr wr {
-    (uintptr_t) ctx,       // wr_id
-    nullptr,               // next
-    &sge,                  // sg_list
-    1,                     // num_sge
-    IBV_WR_SEND_WITH_IMM,           // opcode
-    IBV_SEND_SIGNALED,     // send_flags
-    {},
-    {},
-    {},
-    {},
-  };
-
-  wr.imm_data = rkey;
-
-  if (need_inline) {
-    wr.send_flags |= IBV_SEND_INLINE;
-  }
-
-  ibv_send_wr* bad_wr = nullptr;
-  int ret = ibv_post_send(local_qp_, &wr, &bad_wr);
-  checkEqual(ret, 0, "ibv_post_send() failed");
-}
-
-
-void Connection::postRecv(void* ctx, void* local_addr, uint32_t length, uint32_t lkey) {
-  ibv_sge sge {
-    (uint64_t) local_addr,  // addr
-    length,                // length
-    lkey,                  // lkey
-  };
-  ibv_recv_wr wr {
-    (uintptr_t) ctx,       // wr_id
-    nullptr,               // next
-    &sge,                  // sg_list
-    1,                     // num_sge
-  };
-
-  ibv_recv_wr* bad_wr = nullptr;
-  int ret = ibv_post_recv(local_qp_, &wr, &bad_wr);
-  checkEqual(ret, 0, "ibv_post_recv() failed");
-}
 
 void Connection::fillMR(void* data, uint32_t size) {
   assert(size <= buffer_mr_->length);
@@ -185,16 +141,10 @@ void Connection::fillMR(void* data, uint32_t size) {
   {
     *((char*)(buffer_mr_->addr) + i) = *((char*)(data) + i);  
   }
-  
-  // Message* req = reinterpret_cast<Message*> (buffer_mr_->addr);
-  // for (int i = 0; i < req->dataLen(); i++)
-  // {
-  //   std::cout << *((char*)(req->dataAddr()) + i) << std::endl;
-  // }
 }
 
 void Connection::prepare() {
-  postRecv(this, buffer_mr_->addr, buffer_mr_->length, buffer_mr_->lkey);
+  postRecv(buffer_mr_->addr, buffer_mr_->length, buffer_mr_->lkey);
   switch (role_) {
   case Role::ServerConn : {
     state_ = State::WaitingForRequest;
@@ -211,38 +161,51 @@ void Connection::prepare() {
 }
 
 void Connection::poll() {
-
   static ibv_wc wc[DEFAULT_CQ_CAPACITY];
   int ret = ibv_poll_cq(local_cq_, DEFAULT_CQ_CAPACITY, wc);
   if (ret < 0) {
     info("poll cq error");
     return;
   } else if (ret == 0) {
-    //info("get no cq");
+    //info("get no wc");
     return;
   }
 
   for (int i = 0; i < ret; i++) {
-    Connection* conn =  reinterpret_cast<Connection*>(wc[i].wr_id);
-    switch (conn->role_){
+    switch (role_){
     case Role::ServerConn: {
-      conn->serverAdvance(wc[i]);
+      serverAdvance(wc[i]);
       break;
     }
     case Role::ClientConn: {
-      conn->clientAdvance(wc[i]);
+      clientAdvance(wc[i]);
       break;
     }
     }
-
   }
 }
 
 void Connection::serverAdvance(const ibv_wc &wc) {
-  std::cout << "serverAdvance()" << std::endl;
   switch (wc.opcode) {
   case IBV_WC_RECV: {
-    // todo 
+    assert(state_ == WaitingForRequest);
+    Context* ctx = reinterpret_cast<Context*>(wc.wr_id);
+    Message* req = reinterpret_cast<Message*>(ctx->addr());
+    state_ = HandlingRequest;
+    info("recive from client, start handling the request");
+    Message resp = handler_.handlerRequest(req);
+    info("handle over");
+    // send resp
+    fillMR((void*)&resp, sizeof(resp));
+    postSend(getMRAddr(), sizeof(resp), getLKey(), false);
+    delete ctx;
+    break;
+  }
+  case IBV_WC_SEND: {
+    assert(state_ == HandlingRequest);
+    prepare();
+    info("response send completed, waiting for next request");
+    state_ == WaitingForRequest;
     break;
   }
   case IBV_WC_RDMA_READ: {
@@ -260,4 +223,95 @@ void Connection::serverAdvance(const ibv_wc &wc) {
   }
 }
 
-void Connection::clientAdvance(const ibv_wc &wc) {}
+
+void Connection::clientAdvance(const ibv_wc &wc) {
+  switch (wc.opcode) {
+  case IBV_WC_SEND: {
+    prepare();
+    Context* ctx = reinterpret_cast<Context*>(wc.wr_id);
+    delete ctx;
+    state_ = WaitingForResponse;
+    info("request send completed, waiting for response");
+    break;
+  }
+  case IBV_WC_RECV: {
+    assert(state_ == WaitingForResponse);
+    Context* ctx = reinterpret_cast<Context*>(wc.wr_id);
+    Message* resp = reinterpret_cast<Message*>(ctx->addr());
+    if(resp->msgType() == Response) {
+      info("receive response from server, resp data is: %s", resp->dataAddr());
+      unlock();
+      state_ = Vacant;
+    }
+    break;
+  }
+  case IBV_WC_RDMA_READ: {
+    break;
+  }
+  case IBV_WC_RDMA_WRITE: {
+    break;
+  }
+  default: {
+    info("unexpected wc opcode: %d", wc.opcode);
+    break;
+  }
+  }
+}
+
+void Connection::postSend(void* local_addr, uint32_t length, uint32_t lkey, bool need_inline){
+  ibv_sge sge {
+    (uint64_t) local_addr, // addr
+    length,                // length
+    lkey,                  // lkey
+  };
+  ibv_send_wr wr {
+    (uint64_t)(new Context(local_addr, length)),           // wr_id
+    nullptr,               // next
+    &sge,                  // sg_list
+    1,                     // num_sge
+    IBV_WR_SEND,           // opcode
+    IBV_SEND_SIGNALED,     // send_flags
+    {},
+    {},
+    {},
+    {},
+  };
+
+  if (need_inline) {
+    wr.send_flags |= IBV_SEND_INLINE;
+  }
+
+  ibv_send_wr* bad_wr = nullptr;
+
+  int ret = ibv_post_send(local_qp_, &wr, &bad_wr);
+  checkEqual(ret, 0, "ibv_post_send() failed");
+}
+
+
+void Connection::postRecv(void* local_addr, uint32_t length, uint32_t lkey) {
+  ibv_sge sge {
+    (uint64_t) local_addr, // addr
+    length,                // length
+    lkey,                  // lkey
+  };
+  ibv_recv_wr wr {
+    (uint64_t)(new Context(local_addr, length)),           // wr_id
+    nullptr,               // next
+    &sge,                  // sg_list
+    1,                     // num_sge
+  };
+
+  //std::cout << "postRecv local_addr: " << local_addr << std::endl;
+
+  ibv_recv_wr* bad_wr = nullptr;
+  int ret = ibv_post_recv(local_qp_, &wr, &bad_wr);
+  checkEqual(ret, 0, "ibv_post_recv() failed");
+}
+
+void Connection::lock() {
+  lock_.lock();
+}
+
+void Connection::unlock() {
+  lock_.unlock();
+}

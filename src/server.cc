@@ -168,7 +168,6 @@ void ServerPoller::stop() {
 }
 
 void ServerPoller::poll() {
-
   while (running_.load(std::memory_order_acquire)) {
     std::lock_guard<Spinlock> lock(lock_);
     for (auto conn : conn_list_) {
@@ -176,4 +175,3 @@ void ServerPoller::poll() {
     }
   }
 }
-

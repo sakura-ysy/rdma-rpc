@@ -52,6 +52,8 @@ void Client::connect(const char* host, const char* port) {
   
   setupConnection(cm_id_, 64);
 
+  // run poller
+  poller_.run();
 }
 
 rdma_cm_event* Client::waitEvent(rdma_cm_event_type expected) {
@@ -87,9 +89,9 @@ void Client::setupConnection(rdma_cm_id* client_id, uint32_t n_buffer_page) {
 }
 
 void Client::sendRequest(std::string msg) {
-  Message req((void*)(msg.c_str()), msg.length(), MessageType::ImmRequest);
+  Message req((char*)msg.c_str(), msg.length(), MessageType::ImmRequest);
   poller_.sendRequest(req);  
-  info("finish post request send");
+  info("post send reqeust, req data is: %s", msg.c_str());
 }
 
 
@@ -113,8 +115,29 @@ void ClientPoller::deregisterConn() {
 }
 
 void ClientPoller::sendRequest(Message req) {
-  std::lock_guard<Spinlock> lock(lock_);
+  conn_->lock(); // unlock when receive response;
   conn_->fillMR((void*)&req, sizeof(req));
+  conn_->postSend(conn_->getMRAddr(), sizeof(req),  conn_->getLKey(), false);
+}
 
-  conn_->postSend(conn_, conn_->getMRAddr(), sizeof(req),  conn_->getLKey(),  conn_->getRKey(), false);
+
+void ClientPoller::run() {
+  running_.store(true, std::memory_order_release);
+  poll_thread_ = std::thread(&ClientPoller::poll, this);
+  info("start running client poller");
+}
+
+void ClientPoller::stop() {
+  if (running_.load(std::memory_order_acquire)) {
+    running_.store(false, std::memory_order_release);
+    poll_thread_.join();
+    info("connection poller stopped");
+  }
+}
+
+void ClientPoller::poll() {
+  while (running_.load(std::memory_order_acquire)) {
+    std::lock_guard<Spinlock> lock(lock_);
+    conn_->poll();
+  }
 }

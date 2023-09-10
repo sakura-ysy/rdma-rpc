@@ -24,9 +24,15 @@ public:
   void deregisterConn();
   void sendRequest(Message req);
 
+  void run();
+  void stop();
+  void poll();
+
 private:
+  std::atomic_bool running_{false};
   Spinlock lock_{};
   Connection* conn_;
+  std::thread poll_thread_;
 };
 
 
