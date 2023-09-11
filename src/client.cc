@@ -11,6 +11,8 @@ Client::Client() {
 }
 
 Client::~Client() {
+  // rdma_disconnect will generate an event and a IBV_WC_SEND
+  poller_.stop();
   int ret = rdma_disconnect(cm_id_);
   wCheckEqual(ret, 0, "rdma_disconnect() failed to disconnect");
   rdma_cm_event* cm_event = waitEvent(RDMA_CM_EVENT_DISCONNECTED);

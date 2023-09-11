@@ -67,14 +67,14 @@ Connection::~Connection() {
 
   int ret = 0;
 
-  // clear the memory
+  //clear the memory
   memset(buffer_mr_->addr, 0 ,buffer_mr_->length);
-
-  ret = rdma_destroy_id(cm_id_);
-  wCheckEqual(ret, 0, "fail to destroy cm_id");
 
   ret = ibv_destroy_qp(local_qp_);
   wCheckEqual(ret, 0, "fail to destroy qp");
+
+  ret = rdma_destroy_id(cm_id_);
+  wCheckEqual(ret, 0, "fail to destroy cm_id");
 
   // warnning! you must ack all events before destroy cq,
   // otherwise, the func would never end.

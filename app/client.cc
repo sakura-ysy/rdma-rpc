@@ -27,6 +27,6 @@ int main([[gnu::unused]] int argc, char *argv[]) {
   {
     c.sendRequest(rand_str(len));
   }
-
-  sleep(10);
+  
+  sleep(3);
 }
