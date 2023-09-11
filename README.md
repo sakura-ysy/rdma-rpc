@@ -10,7 +10,7 @@ This is a multi-send & single-receive RPC based on RDMA.
   -  RDMA-enabled NIC;
   -  or, Soft-RoCE instead.
 
-``` shell
+``` bash
 # load rxe
 sudo modprobe rdma_rxe
 # set Soft-RoCE, change 'ens33' to your NIC name
@@ -25,13 +25,13 @@ ibv_devices
 
 - Set up the environment: 
 
-```shell
+```bash
 . setup_env.sh
 ```
 
 - Build the lib and example: 
 
-```shell
+```bash
 mkdir build && cd build
 cmake ..
 make
@@ -48,7 +48,7 @@ make
 
 - Use the lib, for example: 
 
-```shell
+```bash
 # bash-1
 ./app/server <Listen IP> <port>
 # bash-2
@@ -59,7 +59,7 @@ make
 
 - Use the lib, for yourself:
 
-```cpp
+```bash
 // Server
 Server s(const char* /*host*/, const char* /*port*/);
 s.run();
@@ -71,7 +71,7 @@ c.sendRequest(string /*msg*/);
 
 - Customize your own RPC Handler: 
 
-```cpp
+```bash
 // Implement a subclass of Handler if you'd like customize the rpc
 class Handler {
 public:
