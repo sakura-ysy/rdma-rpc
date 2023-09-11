@@ -227,7 +227,6 @@ void Connection::serverAdvance(const ibv_wc &wc) {
 void Connection::clientAdvance(const ibv_wc &wc) {
   switch (wc.opcode) {
   case IBV_WC_SEND: {
-    prepare();
     Context* ctx = reinterpret_cast<Context*>(wc.wr_id);
     delete ctx;
     state_ = WaitingForResponse;
@@ -235,6 +234,7 @@ void Connection::clientAdvance(const ibv_wc &wc) {
     break;
   }
   case IBV_WC_RECV: {
+    prepare();
     assert(state_ == WaitingForResponse);
     Context* ctx = reinterpret_cast<Context*>(wc.wr_id);
     Message* resp = reinterpret_cast<Message*>(ctx->addr());

@@ -29,7 +29,7 @@ echo "start: $cmd"
 sudo $cmd
 
 # set Soft-RoCE
-# change 'ens33' to your CA name
+# change 'ens33' to your NIC name
 # 'rxe_0' is the new name, you can change it to whatever you want
 cmd="rdma link add rxe_0 type rxe netdev ens33"
 echo "start: $cmd"
