@@ -59,7 +59,7 @@ make
 
 - Use the lib, for yourself:
 
-```bash
+```cpp
 // Server
 Server s(const char* /*host*/, const char* /*port*/);
 s.run();
@@ -71,7 +71,7 @@ c.sendRequest(string /*msg*/);
 
 - Customize your own RPC Handler: 
 
-```bash
+```cpp
 // Implement a subclass of Handler if you'd like customize the rpc
 class Handler {
 public:
