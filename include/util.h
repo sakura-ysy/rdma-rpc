@@ -1,3 +1,4 @@
+#pragma once
 #include <stdexcept>
 
 inline auto die(const char* err_msg) {

@@ -1,6 +1,6 @@
 #include <connection.h>
 #include <util.h>
-#include <macro.h>
+#include <const.h>
 #include <iostream>
 #include <mutex>
 #include <message.h>
@@ -205,7 +205,7 @@ void Connection::serverAdvance(const ibv_wc &wc) {
     assert(state_ == HandlingRequest);
     prepare();
     info("response send completed, waiting for next request");
-    state_ == WaitingForRequest;
+    state_ = WaitingForRequest;
     break;
   }
   case IBV_WC_RDMA_READ: {

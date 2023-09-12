@@ -1,3 +1,4 @@
+#pragma once
 #include <connection.h>
 
 class Context {

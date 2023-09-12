@@ -1,7 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <string>
-#include <macro.h>
+#include <const.h>
 
 class [[gnu::packed]] BufferMeta {
 public:
